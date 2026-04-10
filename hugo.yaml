@@ -1,4 +1,4 @@
-baseURL: "https://isaacward1.github.io/"
+baseURL: "https://iw-sec.github.io/"
 languageCode: "en-us"
 title: "Isaac's cool blog website"
 theme: "PaperMod"
@@ -22,7 +22,7 @@ params:
       i post some stuff here maybe idk 🤷‍♂️
   socialIcons:
     - name: Github
-      url: "https://github.com/isaacward1"
+      url: "https://github.com/iw-sec"
     - name: Linkedin
       url: "https://www.linkedin.com/in/iward-sec/"
     - name: Mastodon
