@@ -231,6 +231,7 @@ Option 2
 ## GreedyBear IOC Feed Generation
 ---
 Documentation: https://github.com/GreedyBear-Project/GreedyBear
+
 Example Feed/Dashboard: https://greedybear.honeynet.org/
 
 #### Installation
@@ -239,11 +240,11 @@ Example Feed/Dashboard: https://greedybear.honeynet.org/
 
 Initialize GreedyBear. This process checks system requirements, installs the required packages, checks out the appropriate git branch, and generates environment files:
 
-1. `cd GreedyBear/ && ./gbctl init --elastic-endpoint http://172.17.0.1:64300`
+2. `cd GreedyBear/ && ./gbctl init --elastic-endpoint http://172.17.0.1:64300`
 
 #### **Configuration**
 
-1. `nano ~/GreedyBear/docker/default.yml`
+`nano ~/GreedyBear/docker/default.yml`
 
 Change nginx docker port mapping to `64300:80` :
 
@@ -273,7 +274,7 @@ nginx:
 
  `./gbctl create-admin --username admin --password {password}`
 
-1. https://{Azure VM Public IP}:64300
+2. https://{Azure VM Public IP}:64300
 
 **Useful Commands**
 
@@ -292,7 +293,7 @@ nginx:
 ---
 #### Creating the Index
 
-1. Splunk Cloud > Settings > Indexes > New Index
+Splunk Cloud > Settings > Indexes > New Index
 
 [![splunk-1](splunk-1.png)](splunk-1.png)
 
