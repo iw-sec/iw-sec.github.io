@@ -5,11 +5,15 @@ date: 2025-06-15
 draft: false
 ShowToc: false
 ---
-A guide for deploying Telekom's awesome multi-honeypot [T-Pot](https://github.com/telekom-security/tpotce) on Azure.
+A quick guide for deploying [T-Pot](https://github.com/telekom-security/tpotce) on Azure for fun.
 
+## What is T-Pot?
+---
+T-Pot is an open-source multi-honeypot platform developed and maintained by Telekom Security (Deutsche Telekom). It supports multiple architectures and operating systems and bundles 30+ well-known honeypots (Cowrie, Dionaea, Tanner, Conpot, etc.) together, each emulating a different service/application (file shares, SSH, databases, web apps, ICS/SCADA). These honeypots are deployed and managed as individual containers on a single host via Docker Compose. All captured activity is processed by the ELK stack (Elasticsearch, Logstash, Kibana) where Logstash ingests events, Elasticsearch stores them, and Kibana provides web dashboards for visualizing and analyzing captured attacks.
 
 ## Azure VM Deployment 
 ---
+A quick guide for deploying T-Pot on Azure for fun.
 
 Create a resource > select `Ubuntu Server 24.04 LTS` or `Debian 12 "Bookworm"`
 - **Note:** Ubuntu was less "problematic", Debian was slightly (negligible) more performant. I went with Debian for this tutorial, but most steps should apply to both.
@@ -224,24 +228,234 @@ Option 2
 - Verify: `htpasswd -v /home/<local user>/tpotce/data/nginx/conf/nginxpasswd <web username>`
 
 
-## Creating a Kibana Dashboard Visualization
+## GreedyBear IOC Feed Generation
 ---
-...
+Documentation: https://github.com/GreedyBear-Project/GreedyBear
+Example Feed/Dashboard: https://greedybear.honeynet.org/
+
+#### Installation
+
+1. `cd ~ && git clone https://github.com/GreedyBear-Project/GreedyBear.git`
+
+Initialize GreedyBear. This process checks system requirements, installs the required packages, checks out the appropriate git branch, and generates environment files:
+
+1. `cd GreedyBear/ && ./gbctl init --elastic-endpoint http://172.17.0.1:64300`
+
+#### **Configuration**
+
+1. `nano ~/GreedyBear/docker/default.yml`
+
+Change nginx docker port mapping to `64300:80` :
+
+```
+nginx:
+    image: intelowlproject/greedybear_nginx:prod
+    container_name: greedybear_nginx
+    restart: unless-stopped
+    volumes:
+      - ../configuration/nginx/http.conf:/etc/nginx/conf.d/default.conf
+      - ../configuration/nginx/errors.conf:/etc/nginx/errors.conf
+      - ../configuration/nginx/locations.conf:/etc/nginx/locations.conf
+      - nginx_logs:/var/log/nginx
+      - static_content:/var/www/static
+      - gunicorn_sockets:/run/gunicorn
+    ports:
+      - "64300:80"
+```
+
+**Start and Check Status**
+
+`./gbctl up` , `./gbctl health`, `./gbctl logs`
+
+**Access**
+
+1. Create admin account for web dashboard
+
+ `./gbctl create-admin --username admin --password {password}`
+
+1. https://{Azure VM Public IP}:64300
+
+**Useful Commands**
+
+`./gbctl logs`  - all GreedyBear container logs
+
+`./gbctl logs app`  - Django (WebUI) app logs
+
+`./gbctl down`  - stop everything
+
+`./gbctl restart`  - restart
+
+`./gbctl update` - update to latest version
 
 
-## [GreedyBear](https://github.com/intelowlproject/GreedyBear) Feed Generation
+## Splunk Cloud Integration
 ---
-...
+#### Creating the Index
+
+1. Splunk Cloud > Settings > Indexes > New Index
+
+[![splunk-1](splunk-1.png)](splunk-1.png)
+
+#### Configuring the Universal Forwarder
+
+[![splunk-2](splunk-2.png)](splunk-2.png)
+
+1. Download Splunk Universal Forwarder (https://www.splunk.com/en_us/download/universal-forwarder.html)
+2. Install/Configure UF:
+    
+    ```
+    sudo dpkg -i splunkforwarder-*-linux-amd64.deb
+    
+    sudo /opt/splunkforwarder/bin/splunk enable boot-start -user root --accept-license
+    
+    sudo usermod -aG splunkfwd $USER
+    newgrp splunkfwd
+    
+    systemctl status SplunkForwarder.service
+    ```
+    
+3. Download [Universal Forwarder Credentials](https://help.splunk.com/en/splunk-enterprise/forward-and-process-data/universal-forwarder-manual/9.0/configure-the-universal-forwarder/install-and-configure-the-splunk-cloud-platform-universal-forwarder-credentials-package) package: 
+- NOTE: It is easier to just download from an actual browser and then move **splunkclouduf.spl** to T-Pot via scp.
+
+```
+sudo /opt/splunkforwarder/bin/splunk install app ./splunkclouduf.spl -auth admin:{forwarder_admin_pass}
+
+sudo /opt/splunkforwarder/bin/splunk restart
+
+# check for active forwarders
+sudo /opt/splunkforwarder/bin/splunk list forward-server
+
+# confirm
+sudo cat /opt/splunkforwarder/etc/apps/100_xxx_splunkcloud/local/outputs.conf
+```
+
+4. Forwarder configuration and refining for high fidelity alerts
+
+**inputs.conf (/opt/splunkforwarder/etc/system/local/inputs.conf)**
+
+```
+[monitor:///home/{user}/tpotce/data/suricata/log/eve.json]
+sourcetype = tpot:suricata:eve
+index = tpot
+ignoreOlderThan = 2d
+crcSalt = <SOURCE>
+
+[monitor:///home/{user}/tpotce/data/cowrie/log/cowrie.json]
+sourcetype = cowrie
+index = tpot
+ignoreOlderThan = 2d
+crcSalt = <SOURCE>
+
+[monitor:///home/{user}/tpotce/data/dionaea/log/dionaea.json]
+sourcetype = dionaea
+index = tpot
+ignoreOlderThan = 2d
+crcSalt = <SOURCE>
+
+[monitor:///home/{user}/tpotce/data/tanner/log/tanner_report.json]
+sourcetype = tanner
+index = tpot
+ignoreOlderThan = 2d
+crcSalt = <SOURCE>
+
+[monitor:///home/{user}/tpotce/data/h0neytr4p/log/log.json]
+sourcetype = h0neytr4p
+index = tpot
+ignoreOlderThan = 2d
+crcSalt = <SOURCE>
+```
+
+**transforms.conf (/opt/splunkforwarder/etc/system/local/transforms.conf)**
+
+```
+# 1. Drop everything that isn't an alert (flow, dns, tls, http, fileinfo, etc.)
+[suricata_drop_non_alerts]
+REGEX = ^(?!.*"event_type":"alert").*
+DEST_KEY = queue
+FORMAT = nullQueue
+
+# 2. Drop Suricata stream-engine noise (signature_id 2210000-2210999)
+[suricata_drop_stream_events]
+REGEX = "signature_id":2210\d{3}\b
+DEST_KEY = queue
+FORMAT = nullQueue
+
+# 3. Drop anything not flagged High confidence
+[suricata_drop_low_confidence]
+REGEX = ^(?!.*"confidence":\["High"\]).*
+DEST_KEY = queue
+FORMAT = nullQueue
+
+# 4. Drop alerts that captured no printable payload
+[suricata_drop_no_payload]
+REGEX = ^(?!.*"payload_printable":).*
+DEST_KEY = queue
+FORMAT = nullQueue
+
+# 5. Drop low signature_severity (keep Major and Critical)
+[suricata_drop_low_severity]
+REGEX = "signature_severity":\["(?:Unknown|Informational|Minor)"\]
+DEST_KEY = queue
+FORMAT = nullQueue
+```
+
+**props.conf (/opt/splunkforwarder/etc/system/local/props.conf)**
+
+```
+[tpot:suricata:eve]
+LINE_BREAKER = ([\r\n]+)
+SHOULD_LINEMERGE = false
+TRUNCATE = 1000000
+NO_BINARY_CHECK = true
+force_local_processing = true
+TRANSFORMS-filter = suricata_drop_non_alerts, suricata_drop_stream_events, suricata_drop_low_confidence, suricata_drop_no_payload, suricata_drop_low_severity
+
+[cowrie]
+LINE_BREAKER = ([\r\n]+)
+SHOULD_LINEMERGE = false
+TRUNCATE = 100000
+force_local_processing = true
+NO_BINARY_CHECK = true
+
+[dionaea]
+LINE_BREAKER = ([\r\n]+)
+SHOULD_LINEMERGE = false
+TRUNCATE = 100000
+force_local_processing = true
+NO_BINARY_CHECK = true
+
+[tanner]
+LINE_BREAKER = ([\r\n]+)
+SHOULD_LINEMERGE = false
+TRUNCATE = 100000
+force_local_processing = true
+NO_BINARY_CHECK = true
+
+[h0neytr4p]
+LINE_BREAKER = ([\r\n]+)
+SHOULD_LINEMERGE = false
+TRUNCATE = 100000
+force_local_processing = true
+NO_BINARY_CHECK = true
+```
+
+#### Creating Source Type
+
+1. Settings > **Source types >** New Source Type
+2. Indexed extractions = json
+
+[![splunk-3](splunk-3.png)](splunk-3.png)
+
+3. Advanced > KV_MODE = ‘none’, AUTO_KV_JSON = ‘false’
+
+[![splunk-4](splunk-4.png)](splunk-4.png)
+
 
 
 ## [OpenCTI](https://github.com/OpenCTI-Platform/opencti) Threat Intelligence Correlation
 ---
 ...
 
-
-## Splunk Integration
----
-...
 
 
 ## Troubleshooting
