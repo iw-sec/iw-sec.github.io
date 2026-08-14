@@ -5,7 +5,6 @@ date: 2025-06-15
 draft: false
 ShowToc: false
 ---
-A quick guide for deploying [T-Pot](https://github.com/telekom-security/tpotce) on Azure for fun.
 
 ## What is T-Pot?
 ---
